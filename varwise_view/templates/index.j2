@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VarWISE Viewer</title>
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.css" />  
+    <script src="https://cdn.datatables.net/2.1.8/js/dataTables.js"></script>
+    <style>
+
+    </style>
+</head>
+
+<body id="body">
+<div style="padding: 10px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+    <label for="filterBox" style="font-weight: 600;">Filter:</label>
+    <input id="filterBox" type="text" placeholder="e.g. Hmag > 10, period_peak_1 < 10, variability_snr > 20.2" style="flex: 1; min-width: 320px; padding: 6px 8px;" />
+    <button id="applyFilterBtn" type="button">Apply</button>
+    <div id="filterError" style="color: #b00020; font-size: 0.9em;"></div>
+    <div style="flex-basis: 100%; height: 6px;"></div>
+    <div style="font-size: 0.9em; color: #666;">Use comma-separated numeric constraints. Operators: >, >=, <, <=, ==, !=, =</div>
+    <div style="flex-basis: 100%; height: 8px;"></div>
+</div>
+
+<table id="tbl"></table>
+
+<script>
+    var cols = {{ cols | safe }};
+    var initialFilter = {{ initial_filter | tojson }};
+
+    function loading() {
+        document.getElementById("body").innerHTML =`
+        <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+            <h1>Querying Data...</h1>
+        </div>`;
+    }
+
+    columnnames = []
+    const hasCID = cols.includes("cluster_id");
+    if (hasCID) {
+        const special = {
+            data: "cluster_id",
+            name: "cluster_id",
+            title: "cluster_id | VIEW",
+            fnCreatedCell: function (nTd, sData, oData) {
+                if (oData.cluster_id !== undefined && oData.cluster_id !== null) {
+                    const cid = String(oData.cluster_id);
+                    $(nTd).html("<a href='/object/" + cid + "'>" + cid + "</a>");
+                }
+            },
+            createdCell: function (td, cellData, rowData) {
+                if (rowData.cluster_id !== undefined && rowData.cluster_id !== null) {
+                    const cid = String(rowData.cluster_id);
+                    td.innerHTML = "<a href='/object/" + cid + "'>" + cid + "</a>";
+                }
+            }
+        };
+        columnnames.push(special)
+    }
+    for (var i = 0; i < cols.length; i++) {
+        if (cols[i] === "cluster_id") continue;
+        columnnames.push({ data: (cols[i]), title: cols[i] });
+    }
+
+    // Read filter from URL if present, else from initialFilter
+    const usp = new URLSearchParams(window.location.search);
+    const urlFilter = usp.get('filter') || initialFilter || '';
+    const filterInput = document.getElementById('filterBox');
+    const filterError = document.getElementById('filterError');
+    filterInput.value = urlFilter;
+
+    // Simple client-side validation for comma-separated numeric constraints
+    const allowedOps = ['<=', '>=', '==', '!=', '<', '>', '='];
+    const numberRe = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+    const colSet = new Set(cols);
+
+    function validateFilterString(s) {
+        if (!s.trim()) return { ok: true };
+        const clauses = s.split(',').map(c => c.trim()).filter(Boolean);
+        for (const clause of clauses) {
+            // Find operator position by longest-first
+            let opFound = null;
+            for (const op of allowedOps) {
+                const idx = clause.indexOf(op);
+                if (idx > -1) { opFound = op; break; }
+            }
+            if (!opFound) return { ok: false, msg: `Missing operator in: ${clause}` };
+            const parts = clause.split(opFound);
+            if (parts.length !== 2) return { ok: false, msg: `Invalid clause: ${clause}` };
+            const col = parts[0].trim();
+            const val = parts[1].trim();
+            if (!colSet.has(col)) return { ok: false, msg: `Unknown column: ${col}` };
+            if (!numberRe.test(val)) return { ok: false, msg: `Invalid number in: ${clause}` };
+        }
+        return { ok: true };
+    }
+    let table = new DataTable(document.getElementById("tbl"), {
+        columns: columnnames,
+        paging: true,
+        pageLength: {{ page_size }},
+        searching: false,
+        info: true,
+        processing: true,
+        serverSide: true,
+        ajax: function (dtParams, callback) {
+            const params = new URLSearchParams({
+                draw: String(dtParams.draw || 1),
+                start: String(dtParams.start || 0),
+                length: String(dtParams.length || {{ page_size }})
+            });
+            const currentFilter = (usp.get('filter') || filterInput.value || '').trim();
+            if (currentFilter) params.set('filter', currentFilter);
+            // Include ordering info so server can sort across full filtered set
+            try {
+                const ord = (dtParams.order && dtParams.order[0]) ? dtParams.order[0] : null;
+                if (ord) {
+                    // DataTables provides column index; map to column data key
+                    const colIdx = typeof ord.column === 'number' ? ord.column : null;
+                    const dir = (ord.dir === 'desc') ? 'desc' : 'asc';
+                    if (colIdx !== null && Array.isArray(dtParams.columns) && dtParams.columns[colIdx]) {
+                        const colName = dtParams.columns[colIdx].data;
+                        if (colName) {
+                            params.set('order_col', colName);
+                            params.set('order_dir', dir);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not attach ordering params', e);
+            }
+            fetch('/api/catalog?' + params.toString())
+                .then(res => res.text())
+                .then(text => {
+                    // Be defensive in case the backend emits NaN/Infinity; coerce to null
+                    const safe = text
+                        .replace(/\bNaN\b/g, 'null')
+                        .replace(/\bInfinity\b/g, 'null')
+                        .replace(/\b-Infinity\b/g, 'null');
+                    const payload = JSON.parse(safe);
+                    return payload;
+                })
+                .then(payload => {
+                    callback({
+                        draw: payload.draw,
+                        recordsTotal: payload.recordsTotal,
+                        recordsFiltered: payload.recordsFiltered,
+                        data: payload.data
+                    });
+                })
+                .catch(err => {
+                    console.error('Data load failed', err);
+                    callback({ draw: dtParams.draw || 1, recordsTotal: {{ total_rows }}, recordsFiltered: {{ total_rows }}, data: []});
+                });
+        }
+    });
+
+    function submitQuery() {
+        filterError.textContent = '';
+        const q = filterInput.value.trim();
+        const v = validateFilterString(q);
+        if (!v.ok) {
+            filterError.textContent = v.msg;
+            return;
+        }
+        const next = new URL(window.location.href);
+        if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
+        // Reload the index page with the new filter in the URL
+        window.location.href = next.toString();
+    }
+
+    // Wire up Apply button
+    document.getElementById('applyFilterBtn').addEventListener('click', submitQuery);
+    document.getElementById('filterBox').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            submitQuery();
+        }
+    });
+
+    function attachLoadingToLinks() {
+        document.querySelectorAll("a").forEach(a => {
+            a.addEventListener("click", loading);
+        });
+    }
+
+    attachLoadingToLinks();
+    table.on('draw', attachLoadingToLinks);
+
+    // Total rows are shown by DataTables using server-reported totals
+
+    // Note: link listeners are attached above and on redraw
+</script>
+</body>
+</html>

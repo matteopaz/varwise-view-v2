@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "varwise-view"
+version = "0.1.0"
+description = "VarWISE lightcurve viewer and filtering tools"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "VarWISE View Maintainers" }]
+dependencies = [
+  "astroquery",
+  "astropy",
+  "plotly",
+  "joblib",
+  "pandas",
+  "numpy",
+  "pandasql",
+  "flask",
+  "requests",
+  "platformdirs",
+  "pyarrow"
+]
+
+[project.urls]
+Homepage = "https://github.com/matteopaz/varwise-view"
+
+[project.scripts]
+varwise-view = "varwise_view.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["varwise_view*"]
+
+[tool.setuptools.package-data]
+varwise_view = [
+  "templates/*.j2",
+  "static/*",
+  "assets/*",
+]
+
+[project.optional-dependencies]
+dev = [
+  "playwright>=1.45",
+]

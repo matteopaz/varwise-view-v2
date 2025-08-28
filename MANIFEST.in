@@ -1,0 +1,3 @@
+recursive-include varwise_view/templates *.j2
+recursive-include varwise_view/static *
+recursive-include varwise_view/assets *
