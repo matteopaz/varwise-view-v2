@@ -250,13 +250,15 @@
         </div>`;
     }
 
+    const objUsp = new URLSearchParams(window.location.search);
+    const pureParam = objUsp.get('pure') || '1';
     document.getElementById("next").addEventListener("click", function(){
         loading();
-        window.location.href = "/object/" + next_id;
+        window.location.href = "/object/" + next_id + "?pure=" + encodeURIComponent(pureParam);
     });
     document.getElementById("previous").addEventListener("click", function(){
         loading();
-        window.location.href = "/object/" + prev_id;
+        window.location.href = "/object/" + prev_id + "?pure=" + encodeURIComponent(pureParam);
     });
 
     // --- ZTF lightcurve (async) ---
@@ -322,4 +324,3 @@
 </script>
 </body>
 </html>
-

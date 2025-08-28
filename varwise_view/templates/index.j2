@@ -23,10 +23,15 @@
     <section class="card section stack">
       <div class="filter-meta">
         <div class="kicker">Filter Catalog</div>
-        <div class="filter-bar" style="position: relative; grid-template-columns: 1fr auto auto;">
+        <div class="filter-bar" style="position: relative; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px;">
           <input id="filterBox" class="input" type="text" placeholder="e.g. Hmag > 10, period_peak_1 < 10, variability_snr > 20.2" />
           <button id="applyFilterBtn" class="btn" type="button">Apply</button>
           <button id="columnsBtn" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="columnsPanel">Columns</button>
+          <!-- Whole chip acts as the toggle. The checkbox remains for accessibility but is visually hidden. -->
+          <label class="chip-toggle" for="pureToggle" style="font-size: 0.9em;">
+            <input id="pureToggle" type="checkbox" class="visually-hidden" />
+            <span class="chip-toggle-label">Pure catalog</span>
+          </label>
         </div>
         <div id="filterError" class="error" aria-live="polite"></div>
         <div class="help">Use comma-separated numeric constraints. Operators: >, >=, <, <=, ==, !=, =</div>
@@ -54,13 +59,7 @@
 <script>
     var cols = {{ cols | safe }};
     var initialFilter = {{ initial_filter | tojson }};
-
-    function loading() {
-        document.getElementById("body").innerHTML =`
-        <div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
-            <h1>Querying Data...</h1>
-        </div>`;
-    }
+    var initialPure = {{ initial_pure | default(true) | tojson }};
 
     columnnames = []
     const hasCID = cols.includes("cluster_id");
@@ -72,13 +71,15 @@
             fnCreatedCell: function (nTd, sData, oData) {
                 if (oData.cluster_id !== undefined && oData.cluster_id !== null) {
                     const cid = String(oData.cluster_id);
-                    $(nTd).html("<a href='/object/" + cid + "'>" + cid + "</a>");
+                    const pureParam = (typeof pureToggle !== 'undefined' && pureToggle && pureToggle.checked) ? '1' : '0';
+                    $(nTd).html("<a href='/object/" + cid + "?pure=" + pureParam + "'>" + cid + "</a>");
                 }
             },
             createdCell: function (td, cellData, rowData) {
                 if (rowData.cluster_id !== undefined && rowData.cluster_id !== null) {
                     const cid = String(rowData.cluster_id);
-                    td.innerHTML = "<a href='/object/" + cid + "'>" + cid + "</a>";
+                    const pureParam = (typeof pureToggle !== 'undefined' && pureToggle && pureToggle.checked) ? '1' : '0';
+                    td.innerHTML = "<a href='/object/" + cid + "?pure=" + pureParam + "'>" + cid + "</a>";
                 }
             }
         };
@@ -89,12 +90,45 @@
         columnnames.push({ data: (cols[i]), title: cols[i] });
     }
 
-    // Read filter from URL if present, else from initialFilter
+    // Persist UI state locally
+    const STATE_KEY = 'vw_index_state_v1';
+    function readCookie(name) {
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    function writeCookie(name, value, maxAgeSec) {
+      try {
+        document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + String(maxAgeSec || 31536000);
+      } catch(_) {}
+    }
+    function loadState() {
+      try {
+        const fromCookie = readCookie(STATE_KEY);
+        if (fromCookie) return JSON.parse(fromCookie);
+      } catch(_) {}
+      try { return JSON.parse(localStorage.getItem(STATE_KEY) || '{}'); } catch(_) { return {}; }
+    }
+    function saveState(patch) {
+      const cur = loadState();
+      const next = Object.assign({}, cur, patch || {});
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(next)); } catch(_) {}
+      try { writeCookie(STATE_KEY, JSON.stringify(next), 31536000); } catch(_) {}
+      return next;
+    }
+
+    // Read filter and pure flag from URL if present; else from saved state; else from initial values
     const usp = new URLSearchParams(window.location.search);
-    const urlFilter = usp.get('filter') || initialFilter || '';
+    const savedState = loadState();
+    const urlFilter = (usp.get('filter') ?? (savedState.filter ?? initialFilter ?? ''));
+    const urlPure = usp.get('pure');
+    const pureDefault = (urlPure === null)
+      ? ((savedState.pure !== undefined) ? (savedState.pure ? '1' : '0') : (initialPure ? '1' : '0'))
+      : urlPure;
     const filterInput = document.getElementById('filterBox');
     const filterError = document.getElementById('filterError');
+    const pureToggle = document.getElementById('pureToggle');
     filterInput.value = urlFilter;
+    pureToggle.checked = (pureDefault !== '0');
 
     // Simple client-side validation for comma-separated constraints (numeric or string)
     const allowedOps = ['<=', '>=', '==', '!=', '<', '>', '='];
@@ -132,6 +166,7 @@
         info: true,
         processing: true,
         serverSide: true,
+        stateSave: true,
         scrollX: true,
         ajax: function (dtParams, callback) {
             const params = new URLSearchParams({
@@ -139,8 +174,10 @@
                 start: String(dtParams.start || 0),
                 length: String(dtParams.length || {{ page_size }})
             });
-            const currentFilter = (usp.get('filter') || filterInput.value || '').trim();
+            const currentFilter = (new URLSearchParams(window.location.search).get('filter') || filterInput.value || '').trim();
             if (currentFilter) params.set('filter', currentFilter);
+            const isPure = pureToggle.checked;
+            params.set('pure', isPure ? '1' : '0');
             // Include ordering info so server can sort across full filtered set
             try {
                 const ord = (dtParams.order && dtParams.order[0]) ? dtParams.order[0] : null;
@@ -195,6 +232,8 @@
         }
         const next = new URL(window.location.href);
         if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
+        next.searchParams.set('pure', pureToggle.checked ? '1' : '0');
+        saveState({ filter: q, pure: pureToggle.checked });
         // Reload the index page with the new filter in the URL
         window.location.href = next.toString();
     }
@@ -207,14 +246,15 @@
         }
     });
 
-    function attachLoadingToLinks() {
-        document.querySelectorAll("a").forEach(a => {
-            a.addEventListener("click", loading);
-        });
-    }
-
-    attachLoadingToLinks();
-    table.on('draw', attachLoadingToLinks);
+    // Toggle pure/full and reload, preserving filter
+    pureToggle.addEventListener('change', () => {
+        const next = new URL(window.location.href);
+        next.searchParams.set('pure', pureToggle.checked ? '1' : '0');
+        const q = filterInput.value.trim();
+        if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
+        saveState({ filter: q, pure: pureToggle.checked });
+        window.location.href = next.toString();
+    });
 
     // Total rows are shown by DataTables using server-reported totals
 
@@ -312,6 +352,21 @@
         if (!within) { panel.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); }
       }
     });
+    // Persist state when clicking object links (save before navigation)
+    document.getElementById('tbl').addEventListener('click', function(evt){
+      const anchor = evt.target && evt.target.closest ? evt.target.closest('a') : null;
+      if (anchor && anchor.getAttribute('href') && anchor.getAttribute('href').startsWith('/object/')) {
+        try {
+          const q = (document.getElementById('filterBox')?.value || '').trim();
+          const pure = !!document.getElementById('pureToggle')?.checked;
+          // Save to both localStorage and cookie for robustness
+          const STATE_KEY = 'vw_index_state_v1';
+          const next = JSON.stringify({ filter: q, pure: pure });
+          try { localStorage.setItem(STATE_KEY, next); } catch(_) {}
+          try { document.cookie = STATE_KEY + '=' + encodeURIComponent(next) + '; path=/; max-age=31536000'; } catch(_) {}
+        } catch(_) {}
+      }
+    }, true);
 </script>
 </body>
 </html>

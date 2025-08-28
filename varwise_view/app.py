@@ -9,9 +9,8 @@ import os
 from typing import Optional
  
 
-catalog = None
-cids = None
-cid_positions = None
+CATALOG_PURE = None
+CATALOG_FULL = None
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -22,14 +21,31 @@ def create_app(use_pure: Optional[bool] = None, data_dir: Optional[str] = None):
     `app` instance for WSGI servers or external runners.
     """
 
-    global catalog, cids, cid_positions, _DATA_DIR_OVERRIDE
+    global CATALOG_PURE, CATALOG_FULL, _DATA_DIR_OVERRIDE
     _DATA_DIR_OVERRIDE = data_dir
-    catalog = get_catalog(use_pure)
-    cids = catalog.index.tolist()
-    # Precompute O(1) lookup for previous/next navigation
-    cid_positions = {cid: i for i, cid in enumerate(cids)}
+    # Preload both catalogs for runtime switching via query param
+    CATALOG_PURE = get_catalog(True)
+    CATALOG_FULL = get_catalog(False)
 
     return app
+
+
+def _is_pure_request() -> bool:
+    """Determine if current request should use the pure catalog.
+
+    Defaults to True when unspecified.
+    """
+    try:
+        flag = request.args.get('pure')
+        if flag is None:
+            return True
+        return str(flag) not in ('0', 'false', 'False')
+    except Exception:
+        return True
+
+
+def _current_catalog():
+    return CATALOG_PURE if _is_pure_request() else CATALOG_FULL
 
 
 def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
@@ -105,22 +121,26 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
 @app.route("/")
 def idx():
     # Only send column names and metadata; data will be fetched via server-side pagination
-    cols = list(catalog.reset_index().columns)
+    cat = _current_catalog()
+    cols = list(cat.reset_index().columns)
     cols_json = dumps(cols)
-    total_rows = len(catalog)
+    total_rows = len(cat)
     # Pass through any filter in query string to initialize UI
     initial_filter = request.args.get('filter', '')
+    initial_pure = _is_pure_request()
     return render_template(
         "index.j2",
         cols=cols_json,
         page_size=PAGINATION_UNIT,
         total_rows=total_rows,
         initial_filter=initial_filter,
+        initial_pure=initial_pure,
     )
 
 
 @app.get('/api/catalog')
 def api_catalog():
+    cat = _current_catalog()
     # Support DataTables server-side protocol if 'draw' is present; otherwise simple paging
     if 'draw' in request.args:
         try:
@@ -130,12 +150,12 @@ def api_catalog():
         except ValueError:
             return jsonify({"error": "Invalid parameters"}), 400
 
-        total = len(catalog)
+        total = len(cat)
         if start < 0: start = 0
         if length < 1: length = PAGINATION_UNIT
         end = start + length
 
-        base = catalog.reset_index()
+        base = cat.reset_index()
         # Optional filtering
         filter_q = request.args.get('filter')
         try:
@@ -187,7 +207,7 @@ def api_catalog():
         start = (page - 1) * limit
         end = start + limit
 
-        base = catalog.reset_index()
+        base = cat.reset_index()
         filter_q = request.args.get('filter')
         try:
             filtered_df, filtered_count = _apply_filter(base, filter_q)
@@ -227,11 +247,12 @@ def api_catalog():
 
 @app.route('/object/<int:cid>')
 def getobject(cid: int):
-    if cid not in catalog.index:
+    cat = _current_catalog()
+    if cid not in cat.index:
         return "Not found", 404
     
     # Getting assets
-    catalog_row = catalog.loc[cid]
+    catalog_row = cat.loc[cid]
     column_map = {c: catalog_row[c] for c in catalog_row.index} # To display all columns in template
     column_map = {c: v.item() if isinstance(v, np.generic) else v for c, v in column_map.items()}
     data_row = get_object_data(cid)
@@ -253,6 +274,9 @@ def getobject(cid: int):
     })
 
     # Previous and next object IDs for navigation
+    # Determine prev/next within current catalog
+    cids = cat.index.tolist()
+    cid_positions = {cid_: i for i, cid_ in enumerate(cids)}
     idx_ = cid_positions.get(cid)
     if idx_ is None:
         return "Not found", 404

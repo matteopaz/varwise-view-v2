@@ -23,20 +23,16 @@ def main():
         help="Port to run the server on (default: 9000)."
     )
 
-    parser.add_argument(
-        "--pure", action="store_true",
-        help="Use the pure version of the VarWISE catalog."
-    )
-
     args = parser.parse_args()
     port = args.port
-    use_pure = args.pure
     
-    acquire_catalog(pure=use_pure)
+    # Always acquire both catalogs to support runtime toggling in the UI
+    acquire_catalog(pure=True)
+    acquire_catalog(pure=False)
     acquire_data()
 
     # Propagate flags into the app config
-    app = create_app(use_pure=use_pure)
+    app = create_app()
 
     app.run(port=port, debug=True)
 
