@@ -66,6 +66,11 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
   box-shadow: var(--shadow);
 }
+
+main {
+  margin: 0 auto;
+}
+
 .container {
   width: 95vw;
   padding: 18px 20px 28px;
@@ -116,7 +121,7 @@ a:hover { text-decoration: underline; }
   transition: transform .02s ease, background .15s ease, box-shadow .15s ease;
   box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
-.btn:hover { background: var(--accent-600); }
+.btn:hover { background: var(--accent); }
 .btn:active { transform: translateY(1px); }
 .btn-outline {
   background: #fff;
@@ -163,12 +168,12 @@ table.dataTable th, table.dataTable td { padding: 10px 12px; }
   background: var(--bg-subtle); border-color: var(--accent); color: var(--accent);
 }
 
-.table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.table-wrap { overflow: auto; padding: 16px; }
 
 /* Full-bleed, self-scrolling DataTable area */
 .fullbleed {
   opacity: 100%;
-  max-width: 97vw;
+  max-width: 91.5vw;
 }
 
 /* Make the DataTable content size to its columns so horizontal scrolling is natural */
