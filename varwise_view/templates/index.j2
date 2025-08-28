@@ -4,27 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VarWISE Viewer</title>
-    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/static/favicon.ico" sizes="any">
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.css" />  
     <script src="https://cdn.datatables.net/2.1.8/js/dataTables.js"></script>
-    <style>
-
-    </style>
+    <link rel="stylesheet" href="/static/app.css" />
 </head>
 
 <body id="body">
-<div style="padding: 10px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-    <label for="filterBox" style="font-weight: 600;">Filter:</label>
-    <input id="filterBox" type="text" placeholder="e.g. Hmag > 10, period_peak_1 < 10, variability_snr > 20.2" style="flex: 1; min-width: 320px; padding: 6px 8px;" />
-    <button id="applyFilterBtn" type="button">Apply</button>
-    <div id="filterError" style="color: #b00020; font-size: 0.9em;"></div>
-    <div style="flex-basis: 100%; height: 6px;"></div>
-    <div style="font-size: 0.9em; color: #666;">Use comma-separated numeric constraints. Operators: >, >=, <, <=, ==, !=, =</div>
-    <div style="flex-basis: 100%; height: 8px;"></div>
-</div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-badge">V</span>
+      <span>VarWISE Viewer</span>
+    </div>
+  </header>
 
-<table id="tbl"></table>
+  <main class="container stack-lg">
+    <section class="card section stack">
+      <div class="filter-meta">
+        <div class="kicker">Filter Catalog</div>
+        <div class="filter-bar" style="position: relative; grid-template-columns: 1fr auto auto;">
+          <input id="filterBox" class="input" type="text" placeholder="e.g. Hmag > 10, period_peak_1 < 10, variability_snr > 20.2" />
+          <button id="applyFilterBtn" class="btn" type="button">Apply</button>
+          <button id="columnsBtn" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="columnsPanel">Columns</button>
+        </div>
+        <div id="filterError" class="error" aria-live="polite"></div>
+        <div class="help">Use comma-separated numeric constraints. Operators: >, >=, <, <=, ==, !=, =</div>
+
+        <div id="columnsPanel" class="columns-panel" hidden>
+          <div class="columns-head">
+            <span class="kicker">Toggle Columns</span>
+            <div class="columns-actions">
+              <button id="columnsSelectAll" class="btn btn-outline" type="button">Select all</button>
+              <button id="columnsClearAll" class="btn btn-outline" type="button">Clear all</button>
+            </div>
+          </div>
+          <div id="columnsList" class="columns-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card section-lg">
+      <div class="table-wrap fullbleed">
+        <table id="tbl" class="display" style="width:100%"></table>
+      </div>
+    </section>
+  </main>
 
 <script>
     var cols = {{ cols | safe }};
@@ -71,9 +96,10 @@
     const filterError = document.getElementById('filterError');
     filterInput.value = urlFilter;
 
-    // Simple client-side validation for comma-separated numeric constraints
+    // Simple client-side validation for comma-separated constraints (numeric or string)
     const allowedOps = ['<=', '>=', '==', '!=', '<', '>', '='];
     const numberRe = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+    const stringRe = /^".*"$|^'.*'$/; // only quoted strings allowed
     const colSet = new Set(cols);
 
     function validateFilterString(s) {
@@ -92,7 +118,9 @@
             const col = parts[0].trim();
             const val = parts[1].trim();
             if (!colSet.has(col)) return { ok: false, msg: `Unknown column: ${col}` };
-            if (!numberRe.test(val)) return { ok: false, msg: `Invalid number in: ${clause}` };
+            if (!(numberRe.test(val) || stringRe.test(val))) {
+                return { ok: false, msg: `Invalid value in: ${clause}. Strings must be quoted.` };
+            }
         }
         return { ok: true };
     }
@@ -104,6 +132,7 @@
         info: true,
         processing: true,
         serverSide: true,
+        scrollX: true,
         ajax: function (dtParams, callback) {
             const params = new URLSearchParams({
                 draw: String(dtParams.draw || 1),
@@ -190,6 +219,99 @@
     // Total rows are shown by DataTables using server-reported totals
 
     // Note: link listeners are attached above and on redraw
+
+    // --- Column visibility UI ---
+    const LS_KEY = 'vw_colvis_v1';
+    const stored = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(_) { return {}; } })();
+    const keyForPage = window.location.pathname || 'index';
+    function getSavedVis() { return stored[keyForPage] || {}; }
+    function saveVis(visMap) { stored[keyForPage] = visMap; localStorage.setItem(LS_KEY, JSON.stringify(stored)); }
+
+    // Build list from current columns
+    const panel = document.getElementById('columnsPanel');
+    const btn = document.getElementById('columnsBtn');
+    const list = document.getElementById('columnsList');
+    const saved = getSavedVis();
+
+    function applyInitialVisibility() {
+      const vis = getSavedVis();
+      for (let i = 0; i < columnnames.length; i++) {
+        const title = columnnames[i].title || String(columnnames[i].data || '');
+        if (vis.hasOwnProperty(title)) {
+          table.column(i).visible(!!vis[title]);
+        }
+      }
+      table.columns.adjust();
+    }
+
+    function buildColumnsList() {
+      list.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < columnnames.length; i++) {
+        const title = columnnames[i].title || String(columnnames[i].data || '');
+        const id = `colvis_${i}`;
+        const item = document.createElement('label');
+        item.className = 'colvis-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = id;
+        cb.checked = (saved.hasOwnProperty(title) ? !!saved[title] : true);
+        cb.addEventListener('change', () => {
+          const seen = getSavedVis();
+          seen[title] = cb.checked;
+          saveVis(seen);
+          table.column(i).visible(cb.checked);
+          table.columns.adjust();
+        });
+        const span = document.createElement('span');
+        span.textContent = title;
+        item.appendChild(cb);
+        item.appendChild(span);
+        frag.appendChild(item);
+      }
+      list.appendChild(frag);
+    }
+
+    buildColumnsList();
+    applyInitialVisibility();
+
+    document.getElementById('columnsSelectAll').addEventListener('click', () => {
+      const vis = {};
+      for (let i = 0; i < columnnames.length; i++) {
+        const title = columnnames[i].title || String(columnnames[i].data || '');
+        vis[title] = true;
+        table.column(i).visible(true);
+      }
+      saveVis(vis);
+      list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+      table.columns.adjust();
+    });
+    document.getElementById('columnsClearAll').addEventListener('click', () => {
+      const vis = {};
+      for (let i = 0; i < columnnames.length; i++) {
+        const title = columnnames[i].title || String(columnnames[i].data || '');
+        // Keep the first column (cluster_id | VIEW) visible to avoid empty table
+        const keep = (i === 0);
+        vis[title] = keep;
+        table.column(i).visible(keep);
+      }
+      saveVis(vis);
+      list.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => { cb.checked = (idx === 0); });
+      table.columns.adjust();
+    });
+
+    // Toggle panel open/close
+    btn.addEventListener('click', () => {
+      const open = panel.hasAttribute('hidden');
+      if (open) { panel.removeAttribute('hidden'); btn.setAttribute('aria-expanded', 'true'); }
+      else { panel.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); }
+    });
+    document.addEventListener('click', (e) => {
+      if (!panel.hasAttribute('hidden')) {
+        const within = panel.contains(e.target) || btn.contains(e.target);
+        if (!within) { panel.setAttribute('hidden', ''); btn.setAttribute('aria-expanded', 'false'); }
+      }
+    });
 </script>
 </body>
 </html>

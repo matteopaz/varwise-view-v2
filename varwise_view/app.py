@@ -35,9 +35,9 @@ def create_app(use_pure: Optional[bool] = None, data_dir: Optional[str] = None):
 def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
     """Apply a simple comma-separated constraint list to a DataFrame.
 
-    Grammar per clause: <column> <op> <number>
+    Grammar per clause: <column> <op> <number or "string">
     - op in {>, >=, <, <=, ==, !=, =}
-    - values: integers, floats, or scientific notation
+    - values: integers, floats, scientific notation, or quoted strings ("abc")
     - Clauses separated by commas; combined with logical AND.
 
     Returns (filtered_df, filtered_count). Raises ValueError on invalid input.
@@ -49,10 +49,8 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
     if not clauses:
         return df, len(df)
 
-    # Build mask incrementally
     mask = pd.Series(True, index=df.index)
 
-    # Allowed operators and their lambdas
     import operator as op
 
     ops = {
@@ -65,12 +63,13 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
         '=': op.eq,
     }
 
-    # Regex to parse: column op value
     import re
 
-    # Column names can include letters, digits, underscore, parentheses, hyphen and '?'
-    # e.g. E(BP-RP), blended_source?
-    pattern = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_?()\-]*)\s*(<=|>=|==|!=|<|>|=)\s*([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*$")
+    # Accept quoted strings as values for equality/inequality
+    pattern = re.compile(
+        r'^\s*([A-Za-z_][A-Za-z0-9_?()\-]*)\s*(<=|>=|==|!=|<|>|=)\s*('
+        r'[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|"[^"]*")\s*$'
+    )
 
     for clause in clauses:
         m = pattern.match(clause)
@@ -80,14 +79,23 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
         if col not in df.columns:
             raise ValueError(f"Unknown column: '{col}'")
         fn = ops[op_sym]
-        try:
-            value = float(val_str)
-        except Exception:
-            raise ValueError(f"Invalid number in clause: '{clause}'")
 
-        series = pd.to_numeric(df[col], errors='coerce')
-        clause_mask = fn(series, value)
-        clause_mask = clause_mask.fillna(False)
+        # Check for quoted string
+        if val_str.startswith('"') and val_str.endswith('"'):
+            if op_sym not in ('==', '!=', '='):
+                raise ValueError(f"String comparison only allowed with ==, !=, =: '{clause}'")
+            value = val_str[1:-1]
+            series = df[col].astype(str)
+            clause_mask = fn(series, value)
+        else:
+            try:
+                value = float(val_str)
+            except Exception:
+                raise ValueError(f"Invalid number in clause: '{clause}'")
+            series = pd.to_numeric(df[col], errors='coerce')
+            clause_mask = fn(series, value)
+            clause_mask = clause_mask.fillna(False)
+
         mask &= clause_mask
 
     filtered = df[mask]
