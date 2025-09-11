@@ -60,5 +60,6 @@ def acquire_data(
 
 
 if __name__ == "__main__":
-    acquire_catalog()
-    acquire_data()
+    acquire_catalog(pure=False, force=True)
+    acquire_catalog(pure=True, force=True)
+    acquire_data(force=True)
