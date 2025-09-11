@@ -274,7 +274,7 @@ def getobject(cid: int):
     # Plotting lightcurve (server-side only for the full, non-folded view)
     title = catalog_row["Designation"]
 
-    dfpd = catalog_row["period_peak_1"]
+    dfpd = catalog_row["period1"]
     if not (dfpd > 0):  # if period is not available, set default period to 4000 days
         dfpd = 4000.0
 

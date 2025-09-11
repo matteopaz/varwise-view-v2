@@ -72,7 +72,7 @@
           </tr>
           {% endfor %}
         </table>
-        <div class="help">Coordinates: {{ columns['RAJ2000'] }}, {{ columns['DecJ2000'] }}</div>
+        <div class="help">Coordinates: {{ columns['ra'] }}, {{ columns['dec'] }}</div>
       </div>
 
       <div class="embed-card" id="wiseview">
@@ -176,10 +176,10 @@
 
     // Use HTTP WiseView embed only if current page is HTTP, otherwise show interstitial
     if (window.location.protocol === 'http:') {
-        var wv_url = "http://byw.tools/wiseview#ra="+ columns.RAJ2000 + "&dec=" + columns.DecJ2000 + "&gaia=1&band=3&size=120";
+        var wv_url = "http://byw.tools/wiseview#ra="+ columns.ra + "&dec=" + columns.dec + "&gaia=1&band=3&size=120";
         document.getElementById("wiseview_frame").src = wv_url;
     } else {
-        var wv_url = "/wiseview-interstitial?ra="+ encodeURIComponent(columns.RAJ2000) + "&dec=" + encodeURIComponent(columns.DecJ2000) + "&gaia=1&band=3&size=120";
+        var wv_url = "/wiseview-interstitial?ra="+ encodeURIComponent(columns.ra) + "&dec=" + encodeURIComponent(columns.dec) + "&gaia=1&band=3&size=120";
         document.getElementById("wiseview_frame").src = wv_url;
     }
 
@@ -268,8 +268,8 @@
 
     // --- ZTF lightcurve (async) ---
     (function(){
-        const ra = columns.RAJ2000;
-        const dec = columns.DecJ2000;
+        const ra = columns.ra;
+        const dec = columns.dec;
         const rad = 3.0; // arcsec
         const url = `/api/ztf?ra=${encodeURIComponent(ra)}&dec=${encodeURIComponent(dec)}&rad=${encodeURIComponent(rad)}`;
         const container = document.getElementById('ztf_container');
