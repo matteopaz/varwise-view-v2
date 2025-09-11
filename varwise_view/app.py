@@ -32,13 +32,13 @@ def create_app(use_pure: Optional[bool] = None, data_dir: Optional[str] = None):
     return app
 
 
-def _is_pure_request() -> bool:
+def _is_extended_request() -> bool:
     """Determine if current request should use the pure catalog.
 
     Defaults to True when unspecified.
     """
     try:
-        flag = request.args.get('pure')
+        flag = request.args.get('extended')
         if flag is None:
             return True
         return str(flag) not in ('0', 'false', 'False')
@@ -47,7 +47,7 @@ def _is_pure_request() -> bool:
 
 
 def _current_catalog():
-    return CATALOG_PURE if _is_pure_request() else CATALOG_FULL
+    return CATALOG_FULL if _is_extended_request() else CATALOG_PURE
 
 
 def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
@@ -141,7 +141,7 @@ def idx():
     total_rows = len(cat)
     # Pass through any filter in query string to initialize UI
     initial_filter = request.args.get('filter', '')
-    initial_pure = _is_pure_request()
+    initial_pure = _is_extended_request()
     return render_template(
         "index.j2",
         cols=cols_json,

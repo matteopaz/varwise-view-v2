@@ -28,9 +28,9 @@
           <button id="applyFilterBtn" class="btn" type="button">Apply</button>
           <button id="columnsBtn" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="columnsPanel">Columns</button>
           <!-- Whole chip acts as the toggle. The checkbox remains for accessibility but is visually hidden. -->
-          <label class="chip-toggle" for="pureToggle" style="font-size: 0.9em;">
-            <input id="pureToggle" type="checkbox" class="visually-hidden" />
-            <span class="chip-toggle-label">Pure catalog</span>
+          <label class="chip-toggle" for="extendedToggle" style="font-size: 0.9em;">
+            <input id="extendedToggle" type="checkbox" class="visually-hidden" />
+            <span class="chip-toggle-label">Extended catalog</span>
           </label>
         </div>
         <div id="filterError" class="error" aria-live="polite"></div>
@@ -59,32 +59,32 @@
 <script>
     var cols = {{ cols | safe }};
     var initialFilter = {{ initial_filter | tojson }};
-    var initialPure = {{ initial_pure | default(true) | tojson }};
+  var initialExtended = {{ initial_extended | default(false) | tojson }};
 
     columnnames = []
-    const hasCID = cols.includes("cluster_id");
-    if (hasCID) {
-        const special = {
-            data: "cluster_id",
-            name: "cluster_id",
-            title: "cluster_id | VIEW",
-            fnCreatedCell: function (nTd, sData, oData) {
-                if (oData.cluster_id !== undefined && oData.cluster_id !== null) {
-                    const cid = String(oData.cluster_id);
-                    const pureParam = (typeof pureToggle !== 'undefined' && pureToggle && pureToggle.checked) ? '1' : '0';
-                    $(nTd).html("<a href='/object/" + cid + "?pure=" + pureParam + "'>" + cid + "</a>");
-                }
-            },
-            createdCell: function (td, cellData, rowData) {
-                if (rowData.cluster_id !== undefined && rowData.cluster_id !== null) {
-                    const cid = String(rowData.cluster_id);
-                    const pureParam = (typeof pureToggle !== 'undefined' && pureToggle && pureToggle.checked) ? '1' : '0';
-                    td.innerHTML = "<a href='/object/" + cid + "?pure=" + pureParam + "'>" + cid + "</a>";
-                }
-            }
-        };
-        columnnames.push(special)
-    }
+  const hasCID = cols.includes("cluster_id");
+  if (hasCID) {
+    const special = {
+      data: "cluster_id",
+      name: "cluster_id",
+      title: "cluster_id | VIEW",
+      fnCreatedCell: function (nTd, sData, oData) {
+        if (oData.cluster_id !== undefined && oData.cluster_id !== null) {
+          const cid = String(oData.cluster_id);
+          const extParam = (typeof extendedToggle !== 'undefined' && extendedToggle && extendedToggle.checked) ? '1' : '0';
+          $(nTd).html("<a href='/object/" + cid + "?extended=" + extParam + "'>" + cid + "</a>");
+        }
+      },
+      createdCell: function (td, cellData, rowData) {
+        if (rowData.cluster_id !== undefined && rowData.cluster_id !== null) {
+          const cid = String(rowData.cluster_id);
+          const extParam = (typeof extendedToggle !== 'undefined' && extendedToggle && extendedToggle.checked) ? '1' : '0';
+          td.innerHTML = "<a href='/object/" + cid + "?extended=" + extParam + "'>" + cid + "</a>";
+        }
+      }
+    };
+    columnnames.push(special)
+  }
     for (var i = 0; i < cols.length; i++) {
         if (cols[i] === "cluster_id") continue;
         columnnames.push({ data: (cols[i]), title: cols[i] });
@@ -120,15 +120,15 @@
     const usp = new URLSearchParams(window.location.search);
     const savedState = loadState();
     const urlFilter = (usp.get('filter') ?? (savedState.filter ?? initialFilter ?? ''));
-    const urlPure = usp.get('pure');
-    const pureDefault = (urlPure === null)
-      ? ((savedState.pure !== undefined) ? (savedState.pure ? '1' : '0') : (initialPure ? '1' : '0'))
-      : urlPure;
+    const urlExtended = usp.get('extended');
+    const extendedDefault = (urlExtended === null)
+      ? ((savedState.extended !== undefined) ? (savedState.extended ? '1' : '0') : (initialExtended ? '1' : '0'))
+      : urlExtended;
     const filterInput = document.getElementById('filterBox');
     const filterError = document.getElementById('filterError');
-    const pureToggle = document.getElementById('pureToggle');
+    const extendedToggle = document.getElementById('extendedToggle');
     filterInput.value = urlFilter;
-    pureToggle.checked = (pureDefault !== '0');
+    extendedToggle.checked = (extendedDefault === '1');
 
     // Simple client-side validation for comma-separated constraints (numeric or string)
     const allowedOps = ['<=', '>=', '==', '!=', '<', '>', '='];
@@ -177,8 +177,8 @@
             });
             const currentFilter = (new URLSearchParams(window.location.search).get('filter') || filterInput.value || '').trim();
             if (currentFilter) params.set('filter', currentFilter);
-            const isPure = pureToggle.checked;
-            params.set('pure', isPure ? '1' : '0');
+            const isExtended = extendedToggle.checked;
+            params.set('extended', isExtended ? '1' : '0');
             // Include ordering info so server can sort across full filtered set
             try {
                 const ord = (dtParams.order && dtParams.order[0]) ? dtParams.order[0] : null;
@@ -233,8 +233,8 @@
         }
         const next = new URL(window.location.href);
         if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
-        next.searchParams.set('pure', pureToggle.checked ? '1' : '0');
-        saveState({ filter: q, pure: pureToggle.checked });
+  next.searchParams.set('extended', extendedToggle.checked ? '1' : '0');
+  saveState({ filter: q, extended: extendedToggle.checked });
         // Reload the index page with the new filter in the URL
         window.location.href = next.toString();
     }
@@ -248,14 +248,14 @@
     });
 
     // Toggle pure/full and reload, preserving filter
-    pureToggle.addEventListener('change', () => {
-        const next = new URL(window.location.href);
-        next.searchParams.set('pure', pureToggle.checked ? '1' : '0');
-        const q = filterInput.value.trim();
-        if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
-        saveState({ filter: q, pure: pureToggle.checked });
-        window.location.href = next.toString();
-    });
+  extendedToggle.addEventListener('change', () => {
+    const next = new URL(window.location.href);
+    next.searchParams.set('extended', extendedToggle.checked ? '1' : '0');
+    const q = filterInput.value.trim();
+    if (q) next.searchParams.set('filter', q); else next.searchParams.delete('filter');
+    saveState({ filter: q, extended: extendedToggle.checked });
+    window.location.href = next.toString();
+  });
 
     // Total rows are shown by DataTables using server-reported totals
 
@@ -359,10 +359,10 @@
       if (anchor && anchor.getAttribute('href') && anchor.getAttribute('href').startsWith('/object/')) {
         try {
           const q = (document.getElementById('filterBox')?.value || '').trim();
-          const pure = !!document.getElementById('pureToggle')?.checked;
+          const extended = !!document.getElementById('extendedToggle')?.checked;
           // Save to both localStorage and cookie for robustness
           const STATE_KEY = 'vw_index_state_v1';
-          const next = JSON.stringify({ filter: q, pure: pure });
+          const next = JSON.stringify({ filter: q, extended: extended });
           try { localStorage.setItem(STATE_KEY, next); } catch(_) {}
           try { document.cookie = STATE_KEY + '=' + encodeURIComponent(next) + '; path=/; max-age=31536000'; } catch(_) {}
         } catch(_) {}
