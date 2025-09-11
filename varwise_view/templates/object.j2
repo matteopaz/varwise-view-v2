@@ -7,7 +7,7 @@
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="stylesheet" href="/static/app.css">
     <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
-    <script src="http://danml.com/js/download.js"></script>
+    <script src="https://danml.com/js/download.js"></script>
 </head>
 <body id="body">
   <header class="topbar">
@@ -76,7 +76,7 @@
       </div>
 
       <div class="embed-card" id="wiseview">
-        <embed type="text/html" width="100%" height="100%" id="wiseview_emb" />
+        <iframe width="100%" height="100%" id="wiseview_frame" frameborder="0"></iframe>
       </div>
     </section>
 
@@ -90,7 +90,7 @@
 
 <script type="text/javascript">
 
-    var columns = {{ columns | tojson }};    
+    var columns = {{ columns | tojson }};
     var series = {{ lc_series | safe }};
 
     function makePlot(x, w1, w1s, w2, w2s, title, xaxis, yaxis, target, visibility) {
@@ -174,9 +174,14 @@
     // Initial lightcurve plot with only W1 visible by default
     makePlot(series.t, series.w1, series.w1s, series.w2, series.w2s, 'Lightcurve', 'Time (MJD)', 'Magnitude', 'lightcurve', currentVisibility());
 
-    var wv_url = "http://byw.tools/wiseview#ra="+ columns.RAJ2000 + "&dec=" + columns.DecJ2000 + "&gaia=1&band=3&size=120"
-
-    document.getElementById("wiseview_emb").src = wv_url;
+    // Use HTTP WiseView embed only if current page is HTTP, otherwise show interstitial
+    if (window.location.protocol === 'http:') {
+        var wv_url = "http://byw.tools/wiseview#ra="+ columns.RAJ2000 + "&dec=" + columns.DecJ2000 + "&gaia=1&band=3&size=120";
+        document.getElementById("wiseview_frame").src = wv_url;
+    } else {
+        var wv_url = "/wiseview-interstitial?ra="+ encodeURIComponent(columns.RAJ2000) + "&dec=" + encodeURIComponent(columns.DecJ2000) + "&gaia=1&band=3&size=120";
+        document.getElementById("wiseview_frame").src = wv_url;
+    }
 
 
     function update_period(){
