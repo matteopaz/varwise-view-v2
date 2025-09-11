@@ -24,7 +24,7 @@
       <div class="filter-meta">
         <div class="kicker">Filter Catalog</div>
         <div class="filter-bar" style="position: relative; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px;">
-          <input id="filterBox" class="input" type="text" placeholder="e.g. Hmag > 10, period_peak_1 < 10, variability_snr > 20.2" />
+          <input id="filterBox" class="input" type="text" placeholder="e.g. Hmag > 11.1, simbad_type == null, Designation == "VarWISE J213259.92-832508.6" />
           <button id="applyFilterBtn" class="btn" type="button">Apply</button>
           <button id="columnsBtn" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="columnsPanel">Columns</button>
           <!-- Whole chip acts as the toggle. The checkbox remains for accessibility but is visually hidden. -->
@@ -133,6 +133,7 @@
     // Simple client-side validation for comma-separated constraints (numeric or string)
     const allowedOps = ['<=', '>=', '==', '!=', '<', '>', '='];
     const numberRe = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+    const nullRe = /^null$/i;
     const stringRe = /^".*"$|^'.*'$/; // only quoted strings allowed
     const colSet = new Set(cols);
 
@@ -152,8 +153,8 @@
             const col = parts[0].trim();
             const val = parts[1].trim();
             if (!colSet.has(col)) return { ok: false, msg: `Unknown column: ${col}` };
-            if (!(numberRe.test(val) || stringRe.test(val))) {
-                return { ok: false, msg: `Invalid value in: ${clause}. Strings must be quoted.` };
+            if (!(numberRe.test(val) || stringRe.test(val) || nullRe.test(val))) {
+                return { ok: false, msg: `Invalid value in: ${clause}.` };
             }
         }
         return { ok: true };

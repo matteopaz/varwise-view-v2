@@ -7,6 +7,8 @@ from . import PAGINATION_UNIT
 from json import dumps
 import os
 from typing import Optional
+import operator as op
+import re
  
 
 CATALOG_PURE = None
@@ -51,9 +53,9 @@ def _current_catalog():
 def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
     """Apply a simple comma-separated constraint list to a DataFrame.
 
-    Grammar per clause: <column> <op> <number or "string">
+    Grammar per clause: <column> <op> <number or "string" or null>
     - op in {>, >=, <, <=, ==, !=, =}
-    - values: integers, floats, scientific notation, or quoted strings ("abc")
+    - values: integers, floats, scientific notation, quoted strings ("abc"), or null
     - Clauses separated by commas; combined with logical AND.
 
     Returns (filtered_df, filtered_count). Raises ValueError on invalid input.
@@ -67,8 +69,6 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
 
     mask = pd.Series(True, index=df.index)
 
-    import operator as op
-
     ops = {
         '>': op.gt,
         '>=': op.ge,
@@ -79,12 +79,11 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
         '=': op.eq,
     }
 
-    import re
-
-    # Accept quoted strings as values for equality/inequality
+    # Accept quoted strings as values for equality/inequality, or the literal null (case-insensitive)
     pattern = re.compile(
         r'^\s*([A-Za-z_][A-Za-z0-9_?()\-]*)\s*(<=|>=|==|!=|<|>|=)\s*('
-        r'[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|"[^"]*")\s*$'
+        r'[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|"[^"]*"|null)\s*$',
+        flags=re.IGNORECASE,
     )
 
     for clause in clauses:
@@ -96,8 +95,23 @@ def _apply_filter(df: pd.DataFrame, filter_str: Optional[str]):
             raise ValueError(f"Unknown column: '{col}'")
         fn = ops[op_sym]
 
+        # Handle null literal (select empty, NA, or "")
+        if val_str.lower() == 'null':
+            if op_sym not in ('==', '!=', '='):
+                raise ValueError(f"Null comparison only allowed with ==, !=, =: '{clause}'")
+            series = df[col]
+            # Null if pandas isnull OR empty string after stripping whitespace
+            is_empty_str = False
+            try:
+                is_empty_str = series.astype(str).str.strip() == ''
+                # Note: NaNs become 'nan' in astype(str) so isnull covers them
+            except Exception:
+                # Fallback: only use isnull if astype/str operations fail
+                is_empty_str = pd.Series(False, index=series.index)
+            null_mask = series.isnull() | is_empty_str
+            clause_mask = null_mask if op_sym in ('==', '=') else ~null_mask
         # Check for quoted string
-        if val_str.startswith('"') and val_str.endswith('"'):
+        elif val_str.startswith('"') and val_str.endswith('"'):
             if op_sym not in ('==', '!=', '='):
                 raise ValueError(f"String comparison only allowed with ==, !=, =: '{clause}'")
             value = val_str[1:-1]
