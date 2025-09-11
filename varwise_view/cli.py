@@ -23,12 +23,18 @@ def main():
         help="Port to run the server on (default: 9000)."
     )
 
+    parser.add_argument(
+        "-r", "--reload", action='store_true', default=False,
+        help="Force reload/redownload of the catalog"
+    )
+
     args = parser.parse_args()
     port = args.port
+    force_reload = args.reload
     
     # Always acquire both catalogs to support runtime toggling in the UI
-    acquire_catalog(pure=True)
-    acquire_catalog(pure=False)
+    acquire_catalog(pure=True, force=force_reload)
+    acquire_catalog(pure=False, force=force_reload)
     acquire_data()
 
     # Propagate flags into the app config
