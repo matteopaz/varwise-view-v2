@@ -1,0 +1,72 @@
+name: Build desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "varwise_view/**"
+      - "desktop/**"
+      - "package.json"
+      - "pyproject.toml"
+      - ".github/workflows/desktop-build.yml"
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS
+            os: macos-13
+            npm_script: dist:mac
+            artifact_name: VarWISE-View-macOS
+          - label: Windows
+            os: windows-2022
+            npm_script: dist:win
+            artifact_name: VarWISE-View-Windows
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pyinstaller
+
+      - name: Build frozen Python backend
+        run: pyinstaller --clean --noconfirm desktop/pyinstaller/varwise-view-backend.spec
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Build Electron app
+        run: npm run ${{ matrix.npm_script }}
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
