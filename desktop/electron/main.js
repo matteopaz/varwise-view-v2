@@ -40,7 +40,7 @@ function backendExecutablePath() {
   }
 
   const repoRoot = path.resolve(__dirname, '..', '..');
-  const devBinary = path.join(repoRoot, 'dist', executableName);
+  const devBinary = path.join(repoRoot, 'dist', 'varwise-view-backend', executableName);
   if (fs.existsSync(devBinary)) return devBinary;
 
   return null;
@@ -114,6 +114,7 @@ async function startBackend(port) {
   let command;
   let commandArgs;
   const repoRoot = path.resolve(__dirname, '..', '..');
+  const cwd = app.isPackaged ? app.getPath('userData') : repoRoot;
 
   if (process.env.VARWISE_BACKEND_CMD) {
     command = process.env.VARWISE_BACKEND_CMD;
@@ -131,7 +132,7 @@ async function startBackend(port) {
   appendLog(`Launching backend: ${command} ${commandArgs.join(' ')}\n`);
 
   backendProcess = spawn(command, commandArgs, {
-    cwd: repoRoot,
+    cwd,
     env: {
       ...process.env,
       PYTHONUNBUFFERED: '1',
